@@ -117,3 +117,22 @@ def get_taken_seats(movie_id: str, hall: str, show_time: str) -> Set[str]:
     conn.close()
 
     return {row[0] for row in rows}
+def get_stats_by_movie():
+    """
+    Връща списък (movie_title, count) – колко резервации има за всеки филм.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT movie_title, COUNT(*) as cnt
+        FROM bookings
+        GROUP BY movie_id, movie_title
+        ORDER BY cnt DESC, movie_title ASC
+        """
+    )
+
+    rows = cur.fetchall()
+    conn.close()
+    return rows

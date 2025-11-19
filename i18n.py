@@ -1,5 +1,3 @@
-# i18n.py
-
 from typing import Dict
 
 LANG_EN: Dict[str, str] = {
@@ -32,6 +30,12 @@ LANG_EN: Dict[str, str] = {
         "Booking confirmed: {movie} · {hall} · {time}\n"
         "Client: {client} | Seats: {seats} | Code: {code}"
     ),
+
+    # Stats-related
+    "stats_title": "Statistics",
+    "stats_movie_column": "Movie",
+    "stats_tickets_column": "Tickets",
+    "stats_button": "Stats",
 }
 
 LANG_BG: Dict[str, str] = {
@@ -64,6 +68,12 @@ LANG_BG: Dict[str, str] = {
         "Резервацията е потвърдена: {movie} · {hall} · {time}\n"
         "Клиент: {client} | Места: {seats} | Код: {code}"
     ),
+
+    # Stats-related
+    "stats_title": "Статистика",
+    "stats_movie_column": "Филм",
+    "stats_tickets_column": "Брой билети",
+    "stats_button": "Статистика",
 }
 
 LANGS = {

@@ -1,5 +1,3 @@
-# ui_main_window.py
-
 import random
 import string
 from typing import Dict, Tuple, Set
@@ -18,14 +16,23 @@ from PyQt5.QtWidgets import (
     QGridLayout,
     QTextEdit,
     QSizePolicy,
+    QDialog,
+    QTableWidget,
+    QTableWidgetItem,
 )
-
 from PyQt5.QtGui import QPalette
 
 from data import MOVIES, ROWS, NUM_COLUMNS, get_movie_titles, get_movie_id
 from themes import THEMES, apply_theme_to_palette, Theme
-from storage import init_db, save_booking, get_taken_seats, mark_seats_taken
+from storage import (
+    init_db,
+    save_booking,
+    get_taken_seats,
+    mark_seats_taken,
+    get_stats_by_movie,
+)
 from i18n import get_translations
+from ticket_pdf import generate_ticket_pdf
 
 
 SeatKey = str  # e.g. "A5"
@@ -172,6 +179,12 @@ class MainWindow(QMainWindow):
         self.confirm_btn.clicked.connect(self._handle_booking)
         self.confirm_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         layout.addWidget(self.confirm_btn)
+
+        # Stats button
+        self.stats_btn = QPushButton(self._t("stats_button"))
+        self.stats_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.stats_btn.clicked.connect(self._open_stats_dialog)
+        layout.addWidget(self.stats_btn)
 
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
@@ -369,6 +382,7 @@ class MainWindow(QMainWindow):
             lbl.setText(self._t(key))
 
         self.confirm_btn.setText(self._t("confirm_button"))
+        self.stats_btn.setText(self._t("stats_button"))
         self.lang_en_btn.setText(self._t("lang_en"))
         self.lang_bg_btn.setText(self._t("lang_bg"))
 
@@ -564,7 +578,7 @@ class MainWindow(QMainWindow):
         movie_id = get_movie_id(movie_title)
         code = self._generate_booking_code()
 
-
+        # запиши в база
         save_booking(
             movie_id=movie_id,
             movie_title=movie_title,
@@ -575,24 +589,75 @@ class MainWindow(QMainWindow):
             booking_code=code,
         )
 
+        # маркира местата като заети
         mark_seats_taken(movie_id, hall, time, seats)
         self._load_taken_seats_for_current_show()
 
-        msg_template = self._t("status_booked")
-        self.status_label.setText(
-            msg_template.format(
-                movie=movie_title,
-                hall=hall,
-                time=time,
-                client=client_name,
-                seats=", ".join(seats),
-                code=code,
-            )
+        # PDF билет
+        pdf_path = generate_ticket_pdf(
+            booking_code=code,
+            movie_title=movie_title,
+            hall=hall,
+            show_time=time,
+            client_name=client_name,
+            seats=seats,
         )
 
+        msg_template = self._t("status_booked")
+        base_text = msg_template.format(
+            movie=movie_title,
+            hall=hall,
+            time=time,
+            client=client_name,
+            seats=", ".join(seats),
+            code=code,
+        )
 
+        self.status_label.setText(f"{base_text}\nPDF: {pdf_path}")
+
+        # чистим селекцията
         for seat in seats:
             self.selected_seats[seat] = False
 
         self._update_summary()
         self._update_confirm_state()
+
+    # ---------- STATS ----------
+
+    def _open_stats_dialog(self) -> None:
+        dlg = StatsDialog(self, lang=self.current_lang)
+        dlg.exec_()
+
+
+class StatsDialog(QDialog):
+    def __init__(self, parent=None, lang: str = "en"):
+        super().__init__(parent)
+        self.lang = lang
+        self.translations = get_translations(lang)
+
+        self.setWindowTitle(self.translations.get("stats_title", "Statistics"))
+        self.resize(420, 320)
+
+        layout = QVBoxLayout()
+        self.table = QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(
+            [
+                self.translations.get("stats_movie_column", "Movie"),
+                self.translations.get("stats_tickets_column", "Tickets"),
+            ]
+        )
+        layout.addWidget(self.table)
+        self.setLayout(layout)
+
+        self._load_data()
+
+    def _load_data(self) -> None:
+        rows = get_stats_by_movie()
+        self.table.setRowCount(len(rows))
+
+        for i, (title, count) in enumerate(rows):
+            self.table.setItem(i, 0, QTableWidgetItem(title))
+            self.table.setItem(i, 1, QTableWidgetItem(str(count)))
+
+        self.table.resizeColumnsToContents()
