@@ -1,7 +1,7 @@
 from typing import Dict
 
 LANG_EN: Dict[str, str] = {
-    "app_title": "Cinema Ticket System",
+    "app_title": "Cinema Booking System",
     "reservation_group": "Reservation",
     "seat_group": "Seat map",
     "theme_group": "Theme",
@@ -39,7 +39,7 @@ LANG_EN: Dict[str, str] = {
 }
 
 LANG_BG: Dict[str, str] = {
-    "app_title": "Система за кино билети",
+    "app_title": "Система за кино резервации",
     "reservation_group": "Резервация",
     "seat_group": "Салон",
     "theme_group": "Тема",

@@ -2,6 +2,9 @@ import random
 import string
 from typing import Dict, Tuple, Set
 
+import os
+import sys
+
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QMainWindow,
@@ -22,7 +25,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QPalette
 
-from data import MOVIES, ROWS, NUM_COLUMNS, get_movie_titles, get_movie_id
+from data import ROWS, NUM_COLUMNS
 from themes import THEMES, apply_theme_to_palette, Theme
 from storage import (
     init_db,
@@ -30,9 +33,15 @@ from storage import (
     get_taken_seats,
     mark_seats_taken,
     get_stats_by_movie,
+    get_all_movie_titles,
+    get_halls_for_movie,
+    get_show_times,
+    get_movie_id_for_title,
+    cancel_booking,
 )
 from i18n import get_translations
 from ticket_pdf import generate_ticket_pdf
+from admin_window import AdminWindow
 
 
 SeatKey = str  # e.g. "A5"
@@ -51,6 +60,14 @@ class MainWindow(QMainWindow):
 
         # тема
         self.current_theme: Theme = THEMES["light"]
+
+        # ticket types & prices
+        self.ticket_prices: Dict[str, float] = {
+            "Standard": 12.0,
+            "Student": 9.0,
+            "Child": 8.0,
+            "VIP": 18.0,
+        }
 
         # полета за етикети и бутони
         self.labels: Dict[str, QLabel] = {}
@@ -101,9 +118,7 @@ class MainWindow(QMainWindow):
 
         # Movie
         self.movie_combo = QComboBox()
-        self.movie_combo.addItem("Select movie…")
-        for title in get_movie_titles():
-            self.movie_combo.addItem(title)
+        self._load_movies()
         self.movie_combo.currentIndexChanged.connect(self._on_movie_changed)
         layout.addWidget(self._labeled_widget("movie_label", self.movie_combo))
 
@@ -126,6 +141,18 @@ class MainWindow(QMainWindow):
         self.client_name_edit.setPlaceholderText("Full name")
         self.client_name_edit.textChanged.connect(self._update_summary)
         layout.addWidget(self._labeled_widget("client_label", self.client_name_edit))
+
+        # Ticket type
+        self.ticket_type_combo = QComboBox()
+        self.ticket_type_combo.addItems(list(self.ticket_prices.keys()))
+        self.ticket_type_combo.currentIndexChanged.connect(self._update_price_display)
+        layout.addWidget(self._plain_labeled_widget("Ticket type", self.ticket_type_combo))
+
+        # Price info
+        self.price_label = QLabel("Price per seat: —")
+        self.total_label = QLabel("Total: —")
+        layout.addWidget(self.price_label)
+        layout.addWidget(self.total_label)
 
         # Language group
         self.lang_group = QGroupBox(self._t("lang_group"))
@@ -181,10 +208,28 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.confirm_btn)
 
         # Stats button
-        self.stats_btn = QPushButton(self._t("stats_button"))
+        self.stats_btn = QPushButton(self._t("stats_button") if "stats_button" in self.translations else "Stats")
         self.stats_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.stats_btn.clicked.connect(self._open_stats_dialog)
         layout.addWidget(self.stats_btn)
+
+        # Admin button
+        self.admin_btn = QPushButton("Admin")
+        self.admin_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.admin_btn.clicked.connect(self._open_admin_window)
+        layout.addWidget(self.admin_btn)
+
+        # Cancel booking section
+        cancel_group = QGroupBox("Cancel booking")
+        cg_layout = QVBoxLayout()
+        self.cancel_code_edit = QLineEdit()
+        self.cancel_code_edit.setPlaceholderText("Booking code")
+        self.cancel_btn = QPushButton("Cancel reservation")
+        self.cancel_btn.clicked.connect(self._handle_cancel_booking)
+        cg_layout.addWidget(self.cancel_code_edit)
+        cg_layout.addWidget(self.cancel_btn)
+        cancel_group.setLayout(cg_layout)
+        layout.addWidget(cancel_group)
 
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
@@ -258,6 +303,18 @@ class MainWindow(QMainWindow):
 
         # запомняме етикета по ключ
         self.labels[label_key] = lbl
+        return container
+
+    def _plain_labeled_widget(self, label_text: str, widget: QWidget) -> QWidget:
+        container = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        lbl = QLabel(label_text)
+        lbl.setStyleSheet("font-size: 11px;")
+        layout.addWidget(lbl)
+        layout.addWidget(widget)
+        container.setLayout(layout)
         return container
 
     def _style_seat_button(self, btn: QPushButton, selected: bool, taken: bool = False) -> None:
@@ -382,7 +439,8 @@ class MainWindow(QMainWindow):
             lbl.setText(self._t(key))
 
         self.confirm_btn.setText(self._t("confirm_button"))
-        self.stats_btn.setText(self._t("stats_button"))
+        if "stats_button" in self.translations:
+            self.stats_btn.setText(self._t("stats_button"))
         self.lang_en_btn.setText(self._t("lang_en"))
         self.lang_bg_btn.setText(self._t("lang_bg"))
 
@@ -391,7 +449,15 @@ class MainWindow(QMainWindow):
 
         self._update_summary()
 
-    # ---------- DB / SHOW HELPERS ----------
+    # ---------- MOVIES / SHOW HELPERS ----------
+
+    def _load_movies(self) -> None:
+        self.movie_combo.blockSignals(True)
+        self.movie_combo.clear()
+        self.movie_combo.addItem("Select movie…")
+        for title in get_all_movie_titles():
+            self.movie_combo.addItem(title)
+        self.movie_combo.blockSignals(False)
 
     def _get_current_show_key(self) -> Tuple[str, str, str] | None:
         if (
@@ -405,7 +471,7 @@ class MainWindow(QMainWindow):
         hall = self.hall_combo.currentText()
         time = self.time_combo.currentText()
 
-        movie_id = get_movie_id(movie_title)
+        movie_id = get_movie_id_for_title(movie_title)
         if not movie_id:
             return None
 
@@ -453,6 +519,7 @@ class MainWindow(QMainWindow):
         for seat in list(self.selected_seats.keys()):
             self.selected_seats[seat] = False
         self._load_taken_seats_for_current_show()
+        self._update_price_display()
 
         if index <= 0:
             self._update_summary()
@@ -460,14 +527,10 @@ class MainWindow(QMainWindow):
             return
 
         movie_title = self.movie_combo.currentText()
-        movie_info = MOVIES.get(movie_title)
-        if not movie_info:
-            self._update_summary()
-            self._update_confirm_state()
-            return
+        halls = get_halls_for_movie(movie_title)
 
         self.hall_combo.blockSignals(True)
-        for hall in movie_info["halls"].keys():
+        for hall in halls:
             self.hall_combo.addItem(hall)
         self.hall_combo.blockSignals(False)
         self.hall_combo.setEnabled(True)
@@ -490,14 +553,8 @@ class MainWindow(QMainWindow):
 
         movie_title = self.movie_combo.currentText()
         hall_name = self.hall_combo.currentText()
-        movie_info = MOVIES.get(movie_title)
-        if not movie_info:
-            self._load_taken_seats_for_current_show()
-            self._update_summary()
-            self._update_confirm_state()
-            return
 
-        times = movie_info["halls"].get(hall_name, [])
+        times = get_show_times(movie_title, hall_name)
         self.time_combo.blockSignals(True)
         for t in times:
             self.time_combo.addItem(t)
@@ -527,11 +584,37 @@ class MainWindow(QMainWindow):
         self._style_seat_button(btn, selected=new_state, taken=False)
         self._update_summary()
         self._update_confirm_state()
+        self._update_price_display()
 
-    # ---------- SUMMARY & BOOKING ----------
+    # ---------- PRICE ----------
 
     def _collect_selected_seats(self) -> Tuple[SeatKey, ...]:
         return tuple(sorted([s for s, sel in self.selected_seats.items() if sel]))
+
+    def _get_current_ticket_type(self) -> str:
+        return self.ticket_type_combo.currentText() or "Standard"
+
+    def _get_price_info(self) -> Tuple[float, float]:
+        """Връща (price_per_seat, total_price)."""
+        ticket_type = self._get_current_ticket_type()
+        price_per_seat = self.ticket_prices.get(ticket_type, 0.0)
+        seats_count = len(self._collect_selected_seats())
+        total_price = price_per_seat * seats_count
+        return price_per_seat, total_price
+
+    def _update_price_display(self) -> None:
+        price_per_seat, total_price = self._get_price_info()
+        if price_per_seat == 0:
+            self.price_label.setText("Price per seat: —")
+        else:
+            self.price_label.setText(f"Price per seat: {price_per_seat:.2f} лв.")
+
+        if total_price == 0:
+            self.total_label.setText("Total: —")
+        else:
+            self.total_label.setText(f"Total: {total_price:.2f} лв.")
+
+    # ---------- SUMMARY & BOOKING ----------
 
     def _update_summary(self) -> None:
         movie_title = self.movie_combo.currentText() if self.movie_combo.currentIndex() > 0 else "—"
@@ -540,6 +623,7 @@ class MainWindow(QMainWindow):
         client_name = self.client_name_edit.text().strip() or "—"
         seats = self._collect_selected_seats()
         seats_str = ", ".join(seats) if seats else "—"
+        ticket_type = self._get_current_ticket_type()
 
         text = (
             f"{self._t('movie_label')}: {movie_title}\n"
@@ -547,6 +631,7 @@ class MainWindow(QMainWindow):
             f"{self._t('time_label')}: {time}\n"
             f"{self._t('client_summary')}: {client_name}\n"
             f"{self._t('seats_summary')}: {seats_str}\n"
+            f"Ticket type: {ticket_type}\n"
         )
         self.summary_text.setPlainText(text)
 
@@ -560,6 +645,21 @@ class MainWindow(QMainWindow):
         self.confirm_btn.setEnabled(
             has_movie and has_hall and has_time and has_name and has_seats
         )
+
+    def _open_pdf(self, path: str) -> None:
+        """Отваря PDF файла с default viewer-а на системата."""
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(path)  # Windows
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.Popen(["open", path])  # macOS
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", path])  # Linux
+        except Exception as e:
+            current = self.status_label.text()
+            self.status_label.setText(f"{current}\n(Could not open PDF: {e})")
 
     def _handle_booking(self) -> None:
         movie_title = self.movie_combo.currentText()
@@ -575,10 +675,13 @@ class MainWindow(QMainWindow):
             self.status_label.setText(self._t("status_missing_seats"))
             return
 
-        movie_id = get_movie_id(movie_title)
+        movie_id = get_movie_id_for_title(movie_title)
         code = self._generate_booking_code()
 
-        # запиши в база
+        ticket_type = self._get_current_ticket_type()
+        price_per_seat, total_price = self._get_price_info()
+
+        # запис в база
         save_booking(
             movie_id=movie_id,
             movie_title=movie_title,
@@ -587,13 +690,16 @@ class MainWindow(QMainWindow):
             client_name=client_name,
             seats=seats,
             booking_code=code,
+            ticket_type=ticket_type,
+            price_per_seat=price_per_seat,
+            total_price=total_price,
         )
 
-        # маркира местата като заети
+        # маркирай местата като заети
         mark_seats_taken(movie_id, hall, time, seats)
         self._load_taken_seats_for_current_show()
 
-        # PDF билет
+        # генерация на PDF билет
         pdf_path = generate_ticket_pdf(
             booking_code=code,
             movie_title=movie_title,
@@ -602,6 +708,7 @@ class MainWindow(QMainWindow):
             client_name=client_name,
             seats=seats,
         )
+        self._open_pdf(str(pdf_path))
 
         msg_template = self._t("status_booked")
         base_text = msg_template.format(
@@ -613,20 +720,54 @@ class MainWindow(QMainWindow):
             code=code,
         )
 
-        self.status_label.setText(f"{base_text}\nPDF: {pdf_path}")
+        extra_price = ""
+        if price_per_seat > 0:
+            extra_price = f"\nType: {ticket_type} · Price: {total_price:.2f} лв."
 
-        # чистим селекцията
+        self.status_label.setText(f"{base_text}{extra_price}\nPDF: {pdf_path}")
+
+        # изчистваме селекцията
         for seat in seats:
             self.selected_seats[seat] = False
 
         self._update_summary()
         self._update_confirm_state()
+        self._update_price_display()
 
-    # ---------- STATS ----------
+    # ---------- CANCEL BOOKING ----------
+
+    def _handle_cancel_booking(self) -> None:
+        code = self.cancel_code_edit.text().strip()
+        if not code:
+            self.status_label.setText("Enter booking code to cancel.")
+            return
+
+        ok, reason = cancel_booking(code)
+        if ok:
+            self.status_label.setText(f"Booking {code} canceled.")
+            self._load_taken_seats_for_current_show()
+            self._update_price_display()
+        else:
+            if reason == "not_found":
+                self.status_label.setText(f"No booking found with code {code}.")
+            elif reason == "already_canceled":
+                self.status_label.setText(f"Booking {code} is already canceled.")
+            else:
+                self.status_label.setText(f"Could not cancel booking {code}.")
+
+    # ---------- STATS & ADMIN ----------
 
     def _open_stats_dialog(self) -> None:
         dlg = StatsDialog(self, lang=self.current_lang)
         dlg.exec_()
+
+    def _open_admin_window(self) -> None:
+        dlg = AdminWindow(self)
+        dlg.exec_()
+        # след затваряне на Admin презареждаме списъка с филми
+        self._load_movies()
+        self._update_summary()
+        self._update_confirm_state()
 
 
 class StatsDialog(QDialog):
