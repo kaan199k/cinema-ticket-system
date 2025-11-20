@@ -170,17 +170,29 @@ class MainWindow(QMainWindow):
         lang_layout = QVBoxLayout()
         lang_row = QHBoxLayout()
         lang_row.setSpacing(6)
+
         self.lang_en_btn = QPushButton(self._t("lang_en"))
-        self.lang_bg_btn = QPushButton(self._t("lang_bg"))
+        self.lang_en_btn.setObjectName("toggleButton")
         self.lang_en_btn.setCheckable(True)
+        self.lang_en_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        self.lang_bg_btn = QPushButton(self._t("lang_bg"))
+        self.lang_bg_btn.setObjectName("toggleButton")
         self.lang_bg_btn.setCheckable(True)
+        self.lang_bg_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
         self.lang_en_btn.clicked.connect(lambda checked: self._set_language("en"))
         self.lang_bg_btn.clicked.connect(lambda checked: self._set_language("bg"))
+
         lang_row.addWidget(self.lang_en_btn)
         lang_row.addWidget(self.lang_bg_btn)
+        lang_row.addStretch(1)  # да не пълнят целия ред
+
         lang_layout.addLayout(lang_row)
         self.lang_group.setLayout(lang_layout)
         layout.addWidget(self.lang_group)
+
+
 
         # Theme group
         self.theme_group = QGroupBox(self._t("theme_group"))
@@ -197,13 +209,18 @@ class MainWindow(QMainWindow):
             (self.dark_btn, "dark"),
             (self.night_btn, "night"),
         ]:
+            btn.setObjectName("toggleButton")
             btn.setCheckable(True)
+            btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             btn.clicked.connect(lambda checked, n=name: self._apply_theme(n))
             theme_row.addWidget(btn)
+
+        theme_row.addStretch(1)
 
         theme_box_layout.addLayout(theme_row)
         self.theme_group.setLayout(theme_box_layout)
         layout.addWidget(self.theme_group)
+
 
         # Summary
         self.summary_text = QTextEdit()
