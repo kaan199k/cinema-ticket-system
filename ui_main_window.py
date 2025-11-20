@@ -22,8 +22,9 @@ from PyQt5.QtWidgets import (
     QDialog,
     QTableWidget,
     QTableWidgetItem,
+    QGraphicsDropShadowEffect,
 )
-from PyQt5.QtGui import QPalette
+from PyQt5.QtGui import QPalette, QColor
 
 from data import ROWS, NUM_COLUMNS
 from themes import THEMES, apply_theme_to_palette, Theme
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow):
 
         # тема
         self.current_theme: Theme = THEMES["light"]
+        self.current_theme_name: str = "light"
 
         # ticket types & prices
         self.ticket_prices: Dict[str, float] = {
@@ -74,6 +76,10 @@ class MainWindow(QMainWindow):
         self.seat_buttons: Dict[SeatKey, QPushButton] = {}
         self.selected_seats: Dict[SeatKey, bool] = {}
         self.taken_seats: Set[SeatKey] = set()
+
+        # разумен размер на прозореца
+        self.setMinimumSize(900, 600)
+        self.resize(1200, 720)
 
         self._build_ui()
         self._apply_theme("light")
@@ -91,18 +97,23 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         main_layout = QHBoxLayout()
-        main_layout.setContentsMargins(14, 10, 14, 10)
-        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(16, 12, 16, 12)
+        main_layout.setSpacing(18)
         central.setLayout(main_layout)
 
         left_panel = self._build_left_panel()
-        main_layout.addWidget(left_panel, 0)
-
         right_panel = self._build_right_panel()
+
+        main_layout.addWidget(left_panel, 0)
         main_layout.addWidget(right_panel, 1)
+
+        # повече място за салона, особено при малък прозорец
+        main_layout.setStretch(0, 2)   # форма
+        main_layout.setStretch(1, 7)   # седалки
 
     def _build_left_panel(self) -> QGroupBox:
         self.reservation_group = QGroupBox(self._t("reservation_group"))
+        self._apply_card_shadow(self.reservation_group)
         box = self.reservation_group
         layout = QVBoxLayout()
         layout.setSpacing(10)
@@ -197,7 +208,7 @@ class MainWindow(QMainWindow):
         # Summary
         self.summary_text = QTextEdit()
         self.summary_text.setReadOnly(True)
-        self.summary_text.setMinimumHeight(120)
+        self.summary_text.setMinimumHeight(130)
         layout.addWidget(self._labeled_widget("summary_label", self.summary_text))
 
         # Confirm button
@@ -207,24 +218,37 @@ class MainWindow(QMainWindow):
         self.confirm_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         layout.addWidget(self.confirm_btn)
 
-        # Stats button
-        self.stats_btn = QPushButton(self._t("stats_button") if "stats_button" in self.translations else "Stats")
+        # Stats + Admin в един ред
+        tools_row = QWidget()
+        tools_layout = QHBoxLayout()
+        tools_layout.setContentsMargins(0, 0, 0, 0)
+        tools_layout.setSpacing(8)
+
+        self.stats_btn = QPushButton(
+            self._t("stats_button") if "stats_button" in self.translations else "Stats"
+        )
+        self.stats_btn.setObjectName("secondaryButton")
         self.stats_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.stats_btn.clicked.connect(self._open_stats_dialog)
-        layout.addWidget(self.stats_btn)
 
-        # Admin button
         self.admin_btn = QPushButton("Admin")
+        self.admin_btn.setObjectName("secondaryButton")
         self.admin_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.admin_btn.clicked.connect(self._open_admin_window)
-        layout.addWidget(self.admin_btn)
+
+        tools_layout.addWidget(self.stats_btn)
+        tools_layout.addWidget(self.admin_btn)
+        tools_row.setLayout(tools_layout)
+        layout.addWidget(tools_row)
 
         # Cancel booking section
         cancel_group = QGroupBox("Cancel booking")
+        self._apply_card_shadow(cancel_group)
         cg_layout = QVBoxLayout()
         self.cancel_code_edit = QLineEdit()
         self.cancel_code_edit.setPlaceholderText("Booking code")
         self.cancel_btn = QPushButton("Cancel reservation")
+        self.cancel_btn.setObjectName("dangerButton")
         self.cancel_btn.clicked.connect(self._handle_cancel_booking)
         cg_layout.addWidget(self.cancel_code_edit)
         cg_layout.addWidget(self.cancel_btn)
@@ -240,6 +264,7 @@ class MainWindow(QMainWindow):
 
     def _build_right_panel(self) -> QGroupBox:
         self.seat_group = QGroupBox(self._t("seat_group"))
+        self._apply_card_shadow(self.seat_group)
         box = self.seat_group
         layout = QVBoxLayout()
         layout.setSpacing(8)
@@ -250,8 +275,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.seat_subtitle_label)
 
         self.seat_grid = QGridLayout()
-        self.seat_grid.setHorizontalSpacing(4)
-        self.seat_grid.setVerticalSpacing(4)
+        self.seat_grid.setContentsMargins(12, 8, 12, 12)
+        self.seat_grid.setHorizontalSpacing(6)
+        self.seat_grid.setVerticalSpacing(6)
         layout.addLayout(self.seat_grid)
 
         self._build_seat_buttons()
@@ -264,7 +290,7 @@ class MainWindow(QMainWindow):
         self.selected_seats.clear()
 
         # screen label
-        screen_label = QLabel("SCREEN")
+        screen_label = QLabel("S C R E E N")
         screen_label.setAlignment(Qt.AlignCenter)
         screen_label.setStyleSheet("font-size: 11px; letter-spacing: 3px;")
         self.seat_grid.addWidget(screen_label, 0, 0, 1, NUM_COLUMNS + 1)
@@ -279,8 +305,12 @@ class MainWindow(QMainWindow):
                 btn = QPushButton(str(col))
                 btn.setProperty("seat_id", seat_id)
                 btn.clicked.connect(self._on_seat_clicked)
+
+                # по-скромни размери, да не се чупи при малък прозорец
                 btn.setMinimumSize(30, 26)
-                btn.setMaximumSize(34, 28)
+                btn.setMaximumHeight(32)
+                btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+
                 self._style_seat_button(btn, selected=False, taken=False)
 
                 self.seat_grid.addWidget(btn, row_index + 1, col)
@@ -317,40 +347,59 @@ class MainWindow(QMainWindow):
         container.setLayout(layout)
         return container
 
+    def _apply_card_shadow(self, widget: QWidget) -> None:
+        """Лек shadow за групите (card feeling)."""
+        effect = QGraphicsDropShadowEffect(self)
+        effect.setBlurRadius(24)
+        effect.setOffset(0, 10)
+        effect.setColor(QColor(15, 23, 42, 110))
+        widget.setGraphicsEffect(effect)
+
     def _style_seat_button(self, btn: QPushButton, selected: bool, taken: bool = False) -> None:
+        """
+        Седалките да са:
+        - свободни: по-различни за light/dark
+        - избрани: зелени
+        - заети: сиви
+        """
+        theme_name = getattr(self, "current_theme_name", "light")
+
         if taken:
+            if theme_name == "light":
+                bg = "#e5e7eb"
+                text = "#9ca3af"
+                border = "#d1d5db"
+            else:
+                bg = "#4b5563"
+                text = "#9ca3af"
+                border = "#374151"
             btn.setEnabled(False)
-            btn.setStyleSheet(
-                "QPushButton {"
-                "background-color: #4b5563;"
-                "color: #9ca3af;"
-                "border-radius: 6px;"
-                "border: 1px solid #374151;"
-                "font-size: 11px;"
-                "}"
-            )
         else:
             btn.setEnabled(True)
             if selected:
-                btn.setStyleSheet(
-                    "QPushButton {"
-                    "background-color: #22c55e;"
-                    "color: white;"
-                    "border-radius: 6px;"
-                    "border: 1px solid #16a34a;"
-                    "font-size: 11px;"
-                    "}"
-                )
+                bg = "#22c55e"
+                text = "#ffffff"
+                border = "#16a34a"
             else:
-                btn.setStyleSheet(
-                    "QPushButton {"
-                    "background-color: #111827;"
-                    "color: #e5e7eb;"
-                    "border-radius: 6px;"
-                    "border: 1px solid #4b5563;"
-                    "font-size: 11px;"
-                    "}"
-                )
+                if theme_name == "light":
+                    bg = "#f3f4f6"
+                    text = "#111827"
+                    border = "#d1d5db"
+                else:
+                    bg = "#020617"
+                    text = "#e5e7eb"
+                    border = "#4b5563"
+
+        btn.setStyleSheet(
+            f"QPushButton {{"
+            f"background-color: {bg};"
+            f"color: {text};"
+            f"border-radius: 8px;"
+            f"border: 1px solid {border};"
+            f"font-size: 11px;"
+            f"padding: 4px 0;"
+            f"}}"
+        )
 
     def _generate_booking_code(self) -> str:
         return "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
@@ -360,25 +409,31 @@ class MainWindow(QMainWindow):
     def _apply_theme(self, theme_name: str) -> None:
         theme = THEMES.get(theme_name, THEMES["light"])
         self.current_theme = theme
+        self.current_theme_name = theme_name
 
         palette: QPalette = self.palette()
         apply_theme_to_palette(theme, palette)
         self.setPalette(palette)
 
         base_style = f"""
+        QMainWindow {{
+            background-color: {theme.panel_bg};
+        }}
+
         QGroupBox {{
             border: 1px solid {theme.border};
-            border-radius: 10px;
+            border-radius: 16px;
             margin-top: 10px;
             background-color: {theme.panel_bg};
         }}
 
         QGroupBox::title {{
             subcontrol-origin: margin;
-            left: 10px;
-            padding: 0 3px 0 3px;
+            left: 14px;
+            padding: 0 6px;
             color: {theme.muted_text};
             font-size: 11px;
+            letter-spacing: 0.6px;
         }}
 
         QLabel {{
@@ -389,21 +444,51 @@ class MainWindow(QMainWindow):
             background-color: {theme.panel_bg};
             color: {theme.text};
             border: 1px solid {theme.border};
-            border-radius: 8px;
-            padding: 4px 6px;
+            border-radius: 10px;
+            padding: 6px 9px;
+            selection-background-color: {theme.accent};
+            selection-color: #ffffff;
+        }}
+
+        QTextEdit {{
+            font-family: 'Consolas', 'Menlo', 'Courier New', monospace;
+            font-size: 11px;
         }}
 
         QPushButton {{
             background-color: {theme.accent};
             color: white;
-            border-radius: 12px;
-            padding: 5px 10px;
+            border-radius: 999px;
+            padding: 6px 14px;
             border: none;
+            font-size: 11px;
+        }}
+
+        QPushButton:hover {{
+            background-color: {theme.accent_soft};
         }}
 
         QPushButton:disabled {{
             background-color: {theme.accent_soft};
             color: {theme.muted_text};
+        }}
+
+        QPushButton#secondaryButton {{
+            background-color: transparent;
+            color: {theme.text};
+            border: 1px solid {theme.border};
+        }}
+
+        QPushButton#secondaryButton:hover {{
+            background-color: {theme.panel_bg};
+        }}
+
+        QPushButton#dangerButton {{
+            background-color: #dc2626;
+        }}
+
+        QPushButton#dangerButton:hover {{
+            background-color: #ef4444;
         }}
         """
 
