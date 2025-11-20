@@ -18,9 +18,6 @@ def generate_ticket_pdf(
     seats: Iterable[str],
 ) -> Path:
     """
-    Генерира модерен, чист PDF билет (A6 landscape),
-    записва го в папка tickets/ и го ОТВАРЯ автоматично.
-    Връща пътя към файла.
     """
 
     tickets_dir = Path(__file__).resolve().parent / "tickets"
@@ -73,7 +70,7 @@ def generate_ticket_pdf(
         stroke=0,
     )
 
-    # Ляво малко лого "CINEMA TICKET"
+    #  "CINEMA TICKET"
     c.setFillColor(accent)
     c.setFont("Helvetica-Bold", 11)
     c.drawString(
@@ -91,7 +88,7 @@ def generate_ticket_pdf(
         booking_code,
     )
 
-    # Основна информация вътре в картата
+    # Basic informations
     content_left = card_x + 16
     content_right = card_x + card_width - 16
     y = card_y + card_height - header_height - 14
@@ -148,7 +145,7 @@ def generate_ticket_pdf(
     c.showPage()
     c.save()
 
-    # Автоматично отваряне на PDF
+    # PDF automatically opens
     _open_pdf_with_default_viewer(file_path)
 
     return file_path
@@ -156,7 +153,7 @@ def generate_ticket_pdf(
 
 def _open_pdf_with_default_viewer(file_path: Path) -> None:
     """
-    Отваря PDF файла с default viewer-а на системата (Windows / macOS / Linux).
+   Opens PDF Fyle with default tool of system (Windows / macOS / Linux).
     """
     try:
         path_str = str(file_path)
@@ -169,6 +166,5 @@ def _open_pdf_with_default_viewer(file_path: Path) -> None:
             import subprocess
             subprocess.Popen(["xdg-open", path_str])  # Linux
     except Exception as e:
-        # Няма да чупим програмата, ако не може да го отвори.
-        # Ако искаш, можеш да логнеш gr.
+
         print(f"Could not open PDF automatically: {e}")
